@@ -17,7 +17,6 @@ extern void btreeInsert(btree *tree, btreeKeyType key);
 extern void btreeFree(btree *tree);
 #ifdef BTREE_TEST
 extern void btreePrint(btree *tree);
-extern void btreePrintMaxNode(btree *tree);
 extern void btreeTest1(void);
 extern void btreeTest2(void);
 #endif
