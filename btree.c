@@ -10,7 +10,7 @@ typedef struct _btnode btnode;
 struct __attribute__ ((__packed__)) _btnode {
     size_t num_keys;
     size_t is_leaf:1;
-    KeyType keys[BTREE_M];
+    btreeKeyType keys[BTREE_M];
     btnode *children[BTREE_M + 1];
     btnode *parent;
 };
@@ -23,10 +23,10 @@ struct __attribute__ ((__packed__)) _btree {
 static btnode* _btnodeNew();
 static void _btnodeInit(btnode *node);
 static void _btnodeFree(btnode *node);
-static size_t _btnodeSearchKey(btnode *node, KeyType key);
-static void _leafnodeInsertKey(btnode *node, KeyType key);
-static void _internelnodeInsertKey(btnode *node, KeyType key, btnode *child_left, btnode *child_right);
-static void _btnodeAddKey(btnode *node, size_t pos, KeyType key);
+static size_t _btnodeSearchKey(btnode *node, btreeKeyType key);
+static void _leafnodeInsertKey(btnode *node, btreeKeyType key);
+static void _internelnodeInsertKey(btnode *node, btreeKeyType key, btnode *child_left, btnode *child_right);
+static void _btnodeAddKey(btnode *node, size_t pos, btreeKeyType key);
 static void _btnodeAddChild(btnode *parent, size_t child_p, btnode *child);
 static void _btnodeSplit(btnode *node);
 static void _btnodeSplitMembers(btnode *origin, btnode *new_left, btnode *new_right);
@@ -47,7 +47,7 @@ extern void btreeFree(btree *tree) {
     free(tree);
 }
 
-extern void btreeInsert(btree *tree, KeyType key) {
+extern void btreeInsert(btree *tree, btreeKeyType key) {
     btnode *node = tree->root;
     for (; !(node->is_leaf); ) {
         size_t next_p = _btnodeSearchKey(node, key);
@@ -86,7 +86,7 @@ static void _btnodeFree(btnode *node) {
     }
 }
 
-static void _btnodeAddKey(btnode *node, size_t pos, KeyType key) {
+static void _btnodeAddKey(btnode *node, size_t pos, btreeKeyType key) {
     node->keys[pos] = key;
     node->num_keys += 1;
 }
@@ -97,13 +97,13 @@ static void _btnodeAddChild(btnode *parent, size_t child_p, btnode *child) {
 }
 
 // a general function using binary search
-static size_t ArrSearchKey(KeyType keys[], size_t len, KeyType key) {
+static size_t ArrSearchKey(btreeKeyType keys[], size_t len, btreeKeyType key) {
     size_t left_p = 0,
            right_p = len,
            mid_p;
     for (; right_p > left_p; ) {
         mid_p = (left_p + right_p) / 2;
-        KeyType mid_key = keys[mid_p];
+        btreeKeyType mid_key = keys[mid_p];
         if (key < mid_key) {
             right_p = mid_p;
         } else if (key > mid_key) {
@@ -116,14 +116,14 @@ static size_t ArrSearchKey(KeyType keys[], size_t len, KeyType key) {
     return left_p;
 }
 
-static size_t _btnodeSearchKey(btnode *node, KeyType key) {
+static size_t _btnodeSearchKey(btnode *node, btreeKeyType key) {
     return ArrSearchKey(node->keys, node->num_keys, key);
 }
 
-static void _leafnodeInsertKey(btnode *node, KeyType key) {
+static void _leafnodeInsertKey(btnode *node, btreeKeyType key) {
     size_t pos = _btnodeSearchKey(node, key);
 
-    KeyType *p_keys = node->keys;
+    btreeKeyType *p_keys = node->keys;
     for (size_t i = node->num_keys; i > pos; i--) {
         p_keys[i] = p_keys[i-1];
     }
@@ -134,10 +134,10 @@ static void _leafnodeInsertKey(btnode *node, KeyType key) {
     }
 }
 
-static void _internelnodeInsertKey(btnode *node, KeyType key, btnode *child_left, btnode *child_right) {
+static void _internelnodeInsertKey(btnode *node, btreeKeyType key, btnode *child_left, btnode *child_right) {
     size_t pos = _btnodeSearchKey(node, key);
 
-    KeyType *p_keys = node->keys;
+    btreeKeyType *p_keys = node->keys;
     for (size_t i = node->num_keys; i > pos; i--) {
         p_keys[i] = p_keys[i-1];
     }
@@ -157,7 +157,7 @@ static void _internelnodeInsertKey(btnode *node, KeyType key, btnode *child_left
 
 static void _btnodeSplit(btnode *node) {
     size_t mid_p = node->num_keys / 2;
-    KeyType mid_key = node->keys[mid_p];
+    btreeKeyType mid_key = node->keys[mid_p];
 
     if (node->parent) {
         // >> internel node split
@@ -190,7 +190,7 @@ static void _btnodeSplitMembers(btnode *origin, btnode *new_left, btnode *new_ri
     size_t mid_p = num_keys / 2;
 
     for (size_t i = 0; i < num_keys; i++) {
-        KeyType key = origin->keys[i];
+        btreeKeyType key = origin->keys[i];
         if (i < mid_p) {
             new_left->keys[i] = key;
             new_left->num_keys += 1;

@@ -6,14 +6,14 @@
 #define BTREE_TEST
 #define BTREE_M 400
 
-typedef int KeyType;
+typedef int btreeKeyType;
 // << settings
 
 typedef struct _btree btree;
 
 // >> external API
 extern btree* btreeNew(void);
-extern void btreeInsert(btree *tree, KeyType key);
+extern void btreeInsert(btree *tree, btreeKeyType key);
 extern void btreeFree(btree *tree);
 #ifdef BTREE_TEST
 extern void btreePrint(btree *tree);
