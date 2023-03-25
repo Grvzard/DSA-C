@@ -1,6 +1,10 @@
+// References:
+// https://github.com/google/btree/blob/master/btree.go
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
+#include <string.h>
 #include "btree.h"
 
 #define UNUSED(x) (void)(x)
@@ -9,95 +13,153 @@ typedef struct _btnode btnode;
 
 struct __attribute__ ((__packed__)) _btnode {
     size_t num_keys;
-    size_t is_leaf:1;
-    btreeKeyType keys[BTREE_M];
-    btnode *children[BTREE_M + 1];
-    btnode *parent;
+    size_t num_children;
+    btreeKeyType *keys;
+    btnode **children;
 };
 
 struct __attribute__ ((__packed__)) _btree {
+    size_t degree;
+    size_t length;
+    size_t num_nodes;
+    size_t node_bytes;  // size of a node
     btnode *root;
 };
 
 // >> internal functions
-static btnode* _btnodeNew();
+static inline size_t _MinKeys(btree *t) {
+    return t->degree - 1;
+}
+static inline size_t MaxKeys(btree *t) {
+    return t->degree*2 - 1;
+}
+static inline int isLeaf(btnode *n) {
+    return (n->num_children == 0);
+}
+static btnode* _btreeNewNode(btree *t);
 static void _btnodeInit(btnode *node);
-static void _btnodeFree(btnode *node);
-static size_t _btnodeSearchKey(btnode *node, btreeKeyType key);
-static void _leafnodeInsertKey(btnode *node, btreeKeyType key);
-static void _internelnodeInsertKey(btnode *node, btreeKeyType key, btnode *child_left, btnode *child_right);
-static void _btnodeAddKey(btnode *node, size_t pos, btreeKeyType key);
-static void _btnodeAddChild(btnode *parent, size_t child_p, btnode *child);
-static void _btnodeSplit(btnode *node);
-static void _btnodeSplitMembers(btnode *origin, btnode *new_left, btnode *new_right);
+static void _btreeFreeNode(btree *t, btnode *node);
+static void _btreeFreeNodeR(btree *t, btnode *node);
+static void _btnodeInsertKeyAt(btree *t, btnode *n, size_t p, btreeKeyType key);
+static void _btnodeInsertChildAt(btree *t, btnode *n, size_t p, btnode *child);
+static size_t ArrSearchKey(btreeKeyType keys[], size_t len, btreeKeyType key, int *found);
+static size_t _btnodeSearchKey(btnode *node, btreeKeyType key, int *found);
+static int _btnodeInsert(btree *t, btnode *node, btreeKeyType key);
+static btreeKeyType _btnodeSplitToRight(btree *t, btnode *node_l, btnode *node_r);
+static int _btnodeMaybeSplitChild(btree *t, btnode *node, size_t p);
 static btnode* _btreeMinNode(btree *tree);
 static btnode* _btreeMaxNode(btree *tree);
 // << internal functions
 
 
-extern btree* btreeNew() {
+extern btree* btreeNew(void) {
     btree *tree = (btree *)malloc(sizeof(btree));
-    tree->root = _btnodeNew();
+    tree->degree = ((BTREE_M / 2) + (BTREE_M&1));
+    tree->length = 0;
+    tree->num_nodes = 0;
+    tree->node_bytes = sizeof(btnode)
+                       + sizeof(btreeKeyType) * MaxKeys(tree)
+                       + sizeof(btnode*) * (MaxKeys(tree) + 1);
+    tree->root = _btreeNewNode(tree);
 
     return tree;
 }
 
 extern void btreeFree(btree *tree) {
-    _btnodeFree(tree->root);
+    assert(tree != NULL);
+    _btreeFreeNodeR(tree, tree->root);
     free(tree);
 }
 
-extern void btreeInsert(btree *tree, btreeKeyType key) {
-    btnode *node = tree->root;
-    for (; !(node->is_leaf); ) {
-        size_t next_p = _btnodeSearchKey(node, key);
-        node = node->children[next_p];
+// returns 1 if inserted a key or 0 if the key already exists
+extern int btreeInsert(btree *tree, btreeKeyType key) {
+    assert(tree != NULL);
+
+    btnode *root = tree->root;
+    if (root == NULL) {
+        root = _btreeNewNode(tree);
+        _btnodeInsertKeyAt(tree, root, 0, key);
+        tree->length++;
+        return 1;
     }
-    _leafnodeInsertKey(node, key);
+    if (root->num_keys >= MaxKeys(tree)) {
+        btnode *new_right = _btreeNewNode(tree);
+        btreeKeyType mid_key = _btnodeSplitToRight(tree, root, new_right);
+        btnode *new_root = _btreeNewNode(tree);
+        _btnodeInsertKeyAt(tree, new_root, 0, mid_key);
+        _btnodeInsertChildAt(tree, new_root, 0, root);
+        _btnodeInsertChildAt(tree, new_root, 1, new_right);
+        tree->root = new_root;
+    }
+
+    int inserted = _btnodeInsert(tree, tree->root, key);
+    if (inserted) {
+        tree->length++;
+    }
+
+    return inserted;
 }
 
-static btnode* _btnodeNew() {
+static btnode* _btreeNewNode(btree *t) {
     btnode* node;
-    node = (btnode *)malloc(sizeof(btnode));
+    node = (btnode *)malloc(t->node_bytes);
+
+    size_t _keys_offset = sizeof(btnode);
+    size_t _children_offset = _keys_offset + sizeof(btreeKeyType) * MaxKeys(t);
+    char *node_base = (char*)node;
+    node->keys = (btreeKeyType*)(&node_base[_keys_offset]);
+    node->children = (btnode**)(&node_base[_children_offset]);
     _btnodeInit(node);
+
+    t->num_nodes++; 
 
     return node;
 }
 
 static void _btnodeInit(btnode *node) {
-    for (size_t i = 0; i < BTREE_M; i++) {
-        node->keys[i] = 0;
-        node->children[i] = NULL;
-    }
-    node->children[BTREE_M] = NULL;
     node->num_keys = 0;
-    node->is_leaf = 1;
-    node->parent = NULL;
+    node->num_children = 0;
 }
 
-static void _btnodeFree(btnode *node) {
-    if (node->is_leaf) {
-        free(node);
+static void _btreeFreeNode(btree *t, btnode *node) {
+    free(node);
+    t->num_nodes--;
+}
+
+static void _btreeFreeNodeR(btree *t, btnode *node) {
+    if (isLeaf(node)) {
+        _btreeFreeNode(t, node);
     } else {
-        size_t nchildren = node->num_keys + 1;
-        for (size_t i = 0; i < nchildren; i++) {
-            _btnodeFree(node->children[i]);
+        for (size_t i = 0; i < node->num_children; i++) {
+            _btreeFreeNodeR(t, node->children[i]);
         }
     }
 }
 
-static void _btnodeAddKey(btnode *node, size_t pos, btreeKeyType key) {
-    node->keys[pos] = key;
-    node->num_keys += 1;
+static void _btnodeInsertKeyAt(btree *t, btnode *n, size_t p, btreeKeyType key) {
+    UNUSED(t);
+    assert(p <= n->num_keys);
+    if (p < n->num_keys) {
+        memcpy(&n->keys[p+1], &n->keys[p], (n->num_keys - p) * sizeof(n->keys[0]));
+    }
+    n->keys[p] = key;
+    n->num_keys++;
 }
 
-static void _btnodeAddChild(btnode *parent, size_t child_p, btnode *child) {
-    parent->children[child_p] = child;
-    child->parent = parent;
+static void _btnodeInsertChildAt(btree *t, btnode *n, size_t p, btnode *child) {
+    UNUSED(t);
+    assert(p <= n->num_children);
+    if (p < n->num_children) {
+        assert(0);
+        memcpy(&n->children[p+1], &n->children[p], (n->num_children - p) * sizeof(n->children[0]));
+    }
+    n->children[p] = child;
+    n->num_children++;
 }
 
 // a general function using binary search
-static size_t ArrSearchKey(btreeKeyType keys[], size_t len, btreeKeyType key) {
+static size_t ArrSearchKey(btreeKeyType keys[], size_t len, btreeKeyType key, int *found) {
+    if (found != NULL) *found = 0;
     size_t left_p = 0,
            right_p = len,
            mid_p;
@@ -111,115 +173,83 @@ static size_t ArrSearchKey(btreeKeyType keys[], size_t len, btreeKeyType key) {
         } else {
             left_p = mid_p;
             right_p = mid_p;
+            if (found != NULL) *found = 1;
         }
     }
     return left_p;
 }
 
-static size_t _btnodeSearchKey(btnode *node, btreeKeyType key) {
-    return ArrSearchKey(node->keys, node->num_keys, key);
+static size_t _btnodeSearchKey(btnode *node, btreeKeyType key, int *found) {
+    return ArrSearchKey(node->keys, node->num_keys, key, found);
 }
 
-static void _leafnodeInsertKey(btnode *node, btreeKeyType key) {
-    size_t pos = _btnodeSearchKey(node, key);
+// returns 1 if inserted a key or 0 if the key already exists
+static int _btnodeInsert(btree *t, btnode *node, btreeKeyType key) {
+    UNUSED(t);
 
-    btreeKeyType *p_keys = node->keys;
-    for (size_t i = node->num_keys; i > pos; i--) {
-        p_keys[i] = p_keys[i-1];
+    int found = 0;
+    size_t pos = _btnodeSearchKey(node, key, &found);
+    if (found) {
+        // reset value
+        return 0;
+    } else if (isLeaf(node)) {
+        _btnodeInsertKeyAt(t, node, pos, key);
+        return 1;
     }
-    _btnodeAddKey(node, pos, key);
-
-    if (node->num_keys >= BTREE_M) {
-        _btnodeSplit(node);
-    }
-}
-
-static void _internelnodeInsertKey(btnode *node, btreeKeyType key, btnode *child_left, btnode *child_right) {
-    size_t pos = _btnodeSearchKey(node, key);
-
-    btreeKeyType *p_keys = node->keys;
-    for (size_t i = node->num_keys; i > pos; i--) {
-        p_keys[i] = p_keys[i-1];
-    }
-    _btnodeAddKey(node, pos, key);
-
-    btnode **p_children = node->children;
-    for (size_t i = node->num_keys; i > pos; i--) {
-        p_children[i] = p_children[i-1];
-    }
-    _btnodeAddChild(node, pos, child_left);
-    _btnodeAddChild(node, pos + 1, child_right);
-
-    if (node->num_keys >= BTREE_M) {
-        _btnodeSplit(node);
-    }
-}
-
-static void _btnodeSplit(btnode *node) {
-    size_t mid_p = node->num_keys / 2;
-    btreeKeyType mid_key = node->keys[mid_p];
-
-    if (node->parent) {
-        // >> internel node split
-        btnode *new_left = _btnodeNew();
-        btnode *new_right = _btnodeNew();
-
-        _btnodeSplitMembers(node, new_left, new_right);
-        _internelnodeInsertKey(node->parent, mid_key, new_left, new_right);
-
-        free(node);
-
-    } else {
-        // >> root node split
-        btnode *new_left = _btnodeNew();
-        btnode *new_right = _btnodeNew();
-
-        _btnodeSplitMembers(node, new_left, new_right);
-        // reuse origin root node
-        _btnodeInit(node);
-        btnode *new_root = node;
-        new_root->is_leaf = 0;
-        _btnodeAddKey(new_root, 0, mid_key);
-        _btnodeAddChild(new_root, 0, new_left);
-        _btnodeAddChild(new_root, 1, new_right);
-    }
-}
-
-static void _btnodeSplitMembers(btnode *origin, btnode *new_left, btnode *new_right) {
-    size_t num_keys = origin->num_keys;
-    size_t mid_p = num_keys / 2;
-
-    for (size_t i = 0; i < num_keys; i++) {
-        btreeKeyType key = origin->keys[i];
-        if (i < mid_p) {
-            new_left->keys[i] = key;
-            new_left->num_keys += 1;
-        } else if (i > mid_p) {
-            new_right->keys[i - mid_p - 1] = key;
-            new_right->num_keys += 1;
+    if (_btnodeMaybeSplitChild(t, node, pos)) {
+        btreeKeyType mid_key = node->keys[pos];
+        if (key < mid_key) {
+            // no change
+        } else if (key > mid_key) {
+            pos += 1;
         } else {
-            // pass
+            // the mid key of origin child node is what we want
+            // reset value
+            return 0;
         }
     }
+    return _btnodeInsert(t, node->children[pos], key);
+}
 
-    if (!(origin->is_leaf)) {
-        new_left->is_leaf = 0;
-        new_right->is_leaf = 0;
+static btreeKeyType _btnodeSplitToRight(btree *t, btnode *node_l, btnode *node_r) {
+    UNUSED(t);
 
-        for (size_t i = 0; i <= num_keys; i++) {
-            btnode *child = origin->children[i];
-            if (i <= mid_p) {
-                _btnodeAddChild(new_left, i, child);
-            } else {
-                _btnodeAddChild(new_right, i - mid_p - 1, child);
-            }
-        }
+    size_t nkeys = node_l->num_keys;  // nkeys == MaxKeys
+    size_t mid_p = nkeys / 2;
+    btreeKeyType mid_key = node_l->keys[mid_p];
+
+    memcpy(node_r->keys, &node_l->keys[mid_p + 1], (nkeys - mid_p - 1) * sizeof(node_l->keys[0]));
+    node_l->num_keys = mid_p;
+    node_r->num_keys = nkeys - mid_p - 1;
+
+    if (!isLeaf(node_l)) {
+        memcpy(node_r->children,
+               &node_l->children[mid_p + 2],
+               (node_l->num_children - mid_p - 2) * sizeof(node_l->children[0]));
+        node_l->num_children = mid_p + 1;
+        node_r->num_children = node_l->num_children - mid_p - 2;
+    }
+
+    return mid_key;
+}
+
+// Returns whether or not a split occurred.
+static int _btnodeMaybeSplitChild(btree *t, btnode *node, size_t p) {
+    btnode *child = node->children[p];
+    if (child->num_keys < MaxKeys(t)) {
+        return 0;
+    } else {
+        btnode *new_child_right = _btreeNewNode(t);
+        btreeKeyType mid_key = _btnodeSplitToRight(t, child, new_child_right);
+        _btnodeInsertKeyAt(t, node, p, mid_key);
+        _btnodeInsertChildAt(t, node, p + 1, new_child_right);
+        return 1;
     }
 }
 
 static btnode* _btreeMinNode(btree *tree) {
     btnode *node = tree->root;
-    for (; !(node->is_leaf); ) {
+    for (; !isLeaf(node); ) {
         node = node->children[0];
     }
     return node;
@@ -227,8 +257,8 @@ static btnode* _btreeMinNode(btree *tree) {
 
 static btnode* _btreeMaxNode(btree *tree) {
     btnode *node = tree->root;
-    for (; !(node->is_leaf); ) {
-        node = node->children[node->num_keys];
+    for (; !isLeaf(node); ) {
+        node = node->children[node->num_children - 1];
     }
     return node;
 }
@@ -252,7 +282,7 @@ extern void btreePrint(btree *tree) {
     right_p++;
     for (; left_p < right_p; left_p++) {
         node = nodes_list[left_p];
-        if (!(node->is_leaf)) {
+        if (!isLeaf(node)) {
             for (size_t i = 0; i < node->num_keys + 1; i++) {
                 nodes_list[right_p] = node->children[i];
                 right_p++;
@@ -270,11 +300,13 @@ extern void btreePrint(btree *tree) {
 extern void btreeTest1(void) {
     btree *tree = btreeNew();
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 1; i < MaxKeys(tree); i++) {
         btreeInsert(tree, i);
     }
+    btreeInsert(tree, 0);
     btreePrint(tree);
-    btreeInsert(tree, 16);
+    btreeInsert(tree, MaxKeys(tree) + 1);
+    btreeInsert(tree, MaxKeys(tree) + 2);
     btreePrint(tree);
 
     btreeFree(tree);
@@ -284,7 +316,7 @@ extern void btreeTest1(void) {
 extern void btreeTest2(void) {
     btree *tree = btreeNew();
 
-    for (int i = 0; i < 200000; i++) {
+    for (int i = 0; i < 2000; i++) {
         btreeInsert(tree, i);
     }
     _btnodePrint(_btreeMinNode(tree));
