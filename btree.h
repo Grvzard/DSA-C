@@ -15,13 +15,13 @@ typedef struct _btree btree;
 // >> external API
 extern btree* btreeNew(void);
 extern int btreeInsert(btree *tree, btreeKeyType key);
-// extern int btreeDel(btree *tree, btreeKeyType key);
+extern int btreeDel(btree *tree, btreeKeyType key);
 extern void btreeFree(btree *tree);
 #ifdef BTREE_TEST
 extern void btreePrint(btree *tree);
 extern void btreeTest1(void);
 extern void btreeTest2(void);
-// extern void btreeTest3(void);
+extern void btreeTest3(void);
 #endif
 // << external API
 
