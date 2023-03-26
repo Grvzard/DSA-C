@@ -150,7 +150,6 @@ static void _btnodeInsertChildAt(btree *t, btnode *n, size_t p, btnode *child) {
     UNUSED(t);
     assert(p <= n->num_children);
     if (p < n->num_children) {
-        assert(0);
         memcpy(&n->children[p+1], &n->children[p], (n->num_children - p) * sizeof(n->children[0]));
     }
     n->children[p] = child;
