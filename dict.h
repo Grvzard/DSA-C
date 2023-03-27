@@ -28,6 +28,8 @@ typedef struct _dict Dict;
 // >> external API
 extern Dict*
 Dict_New(void);
+extern Dict*
+Dict_NewPresized(size_t size);
 extern DictValueType
 Dict_Get(Dict* mp, DictKeyType key);
 extern void
@@ -47,6 +49,8 @@ extern void
 dictTest2(void);
 extern void
 dictTest3(void);
+extern void
+dictTest4(void);
 #endif
 // << external API
 

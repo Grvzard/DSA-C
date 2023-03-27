@@ -71,6 +71,8 @@ static inline hash_t
 Key_Hash(DictKeyType key) {
     return (hash_t)key;
 }
+static uint8_t
+calc_log2_keysize(size_t minsize);
 static void
 _Dict_Resize(Dict* mp);
 static DictKeys*
@@ -98,9 +100,14 @@ _DictKeys_GetHashPosition(DictKeys* dk, hash_t hash, ix_t index);
 
 extern Dict*
 Dict_New(void) {
+    return Dict_NewPresized(1);
+}
+
+extern Dict*
+Dict_NewPresized(size_t size) {
     Dict* mp = (Dict*)malloc(sizeof(Dict));
     mp->used = 0;
-    mp->keys = _DictKeys_New(DICT_LOG_MINSIZE);
+    mp->keys = _DictKeys_New(calc_log2_keysize(size));
     return mp;
 }
 
@@ -154,15 +161,21 @@ Dict_Free(Dict* d) {
     free(d);
 }
 
+static uint8_t
+calc_log2_keysize(size_t minsize) {
+    uint8_t new_log2_size = DICT_LOG_MINSIZE;
+    for (; ((size_t)1 << new_log2_size) < minsize; ) {
+        new_log2_size++;
+    }
+    return new_log2_size;
+}
+
 static void
 _Dict_Resize(Dict* mp) {
     DictKeys* oldkeys = mp->keys;
     size_t nentries = mp->used;
 
-    uint8_t new_log2_size = DICT_LOG_MINSIZE;
-    for (; ((size_t)1 << new_log2_size) < GROWTH_RATE(mp);) {
-        new_log2_size++;
-    }
+    uint8_t new_log2_size = calc_log2_keysize(GROWTH_RATE(mp));
 
     mp->keys = _DictKeys_New(new_log2_size);
     // if (mp->keys == NULL) {
@@ -417,5 +430,14 @@ dictTest2(void) {
 extern void
 dictTest3(void) {
     printf("%d\n", sizeof(DictKeys));
+}
+
+extern void
+dictTest4(void) {
+    Dict *d = Dict_NewPresized(2u << 7);
+    assert(d->keys->dk_index_bytes == 2);
+    assert(d->keys->dk_usable == 170);
+    printf("%d\n", d->keys->dk_index_bytes);
+    printf("%d\n", d->keys->dk_usable);
 }
 #endif  // DICT_TEST
