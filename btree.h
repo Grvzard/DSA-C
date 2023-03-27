@@ -24,6 +24,7 @@ extern void btreePrint(btree *tree);
 extern void btreeTest1(void);
 extern void btreeTest2(void);
 extern void btreeTest3(void);
+extern void btreeTestDelAll(void);
 #endif
 // << external API
 

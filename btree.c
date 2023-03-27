@@ -504,11 +504,18 @@ static void _btnodePrint(btnode *node) {
 }
 
 extern void btreePrint(btree *tree) {
+    assert(tree != NULL);
+    if (tree->root == NULL) {
+        printf("---0 node---\n");
+        return;
+    }
+
     btnode *nodes_list[100000];
     size_t left_p = 0;
     size_t right_p = 0;
 
     btnode *node = tree->root;
+
     nodes_list[0] = node;
     right_p++;
     for (; left_p < right_p; left_p++) {
@@ -573,6 +580,26 @@ extern void btreeTest3(void) {
 
     printf("will be deleted: %d\n", btreeGet(tree, 8));
     assert(btreeDel(tree, 8) == 1);
+    btreePrint(tree);
+
+    btreeFree(tree);
+    tree = NULL;
+}
+
+extern void btreeTestDelAll(void) {
+    btree *tree = btreeNew();
+
+    for (int i = 0; i <= MaxKeys(tree); i++) {
+        btreeSet(tree, i);
+    }
+    btreePrint(tree);
+
+    for (int i = 0; i <= MaxKeys(tree); i++) {
+        if (btreeHas(tree, i)) {
+            btreeDel(tree, i);
+        }
+    }
+    assert(btreeHas(tree, 0) == 0);
     btreePrint(tree);
 
     btreeFree(tree);
