@@ -15,6 +15,8 @@ typedef struct _btree btree;
 // >> external API
 extern btree* btreeNew(void);
 extern int btreeSet(btree *tree, btreeKeyType key);
+extern int btreeGet(btree *tree, btreeKeyType key);
+extern int btreeHas(btree *tree, btreeKeyType key);
 extern int btreeDel(btree *tree, btreeKeyType key);
 extern void btreeFree(btree *tree);
 #ifdef BTREE_TEST

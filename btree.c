@@ -106,6 +106,40 @@ extern int btreeSet(btree *tree, btreeKeyType key) {
     return inserted;
 }
 
+// the key must exists (btreeHas(key) == 1), or an error will be raised
+extern int btreeGet(btree *t, btreeKeyType key) {
+    assert(t != NULL && t->root != NULL);
+
+    int found = 0;
+    size_t p;
+    btnode *node = t->root;
+    do {
+        p = _btnodeSearchKey(node, key, &found);
+    } while (!found && !isLeaf(node) && (node = node->children[p]));
+
+    assert(found);
+    // return node->values[p];
+    return node->keys[p];
+}
+
+// returns 1 or 0
+extern int btreeHas(btree *t, btreeKeyType key) {
+    assert(t != NULL);
+    if (t->root == NULL) {
+        return 0;
+    }
+
+    int found = 0;
+    size_t p;
+    btnode *node = t->root;
+    do {
+        p = _btnodeSearchKey(node, key, &found);
+    } while (!found && !isLeaf(node) && (node = node->children[p]));
+
+    return found;
+}
+
+// returns whether or not a key is been deleted
 extern int btreeDel(btree *t, btreeKeyType key) {
     assert(t != NULL && t->root != NULL);
 
@@ -532,8 +566,12 @@ extern void btreeTest3(void) {
         btreeSet(tree, i);
     }
     btreePrint(tree);
+
     assert(btreeDel(tree, 7) == 1);
+    assert(btreeHas(tree, 7) == 0);
     btreePrint(tree);
+
+    printf("will be deleted: %d\n", btreeGet(tree, 8));
     assert(btreeDel(tree, 8) == 1);
     btreePrint(tree);
 
