@@ -78,7 +78,7 @@ extern void btreeFree(btree *tree) {
 }
 
 // returns 1 if inserted a key or 0 if the key already exists
-extern int btreeInsert(btree *tree, btreeKeyType key) {
+extern int btreeSet(btree *tree, btreeKeyType key) {
     assert(tree != NULL);
 
     btnode *root = tree->root;
@@ -498,12 +498,12 @@ extern void btreeTest1(void) {
     btree *tree = btreeNew();
 
     for (int i = 1; i < MaxKeys(tree); i++) {
-        btreeInsert(tree, i);
+        btreeSet(tree, i);
     }
-    btreeInsert(tree, 0);
+    btreeSet(tree, 0);
     btreePrint(tree);
-    btreeInsert(tree, MaxKeys(tree) + 1);
-    btreeInsert(tree, MaxKeys(tree) + 2);
+    btreeSet(tree, MaxKeys(tree) + 1);
+    btreeSet(tree, MaxKeys(tree) + 2);
     btreePrint(tree);
 
     btreeFree(tree);
@@ -514,7 +514,7 @@ extern void btreeTest2(void) {
     btree *tree = btreeNew();
 
     for (int i = 0; i < 2000; i++) {
-        btreeInsert(tree, i);
+        btreeSet(tree, i);
     }
     _btnodePrint(_btreeMinNode(tree));
     printf("\n");
@@ -529,7 +529,7 @@ extern void btreeTest3(void) {
     btree *tree = btreeNew();
 
     for (int i = 0; i < BTREE_M; i++) {
-        btreeInsert(tree, i);
+        btreeSet(tree, i);
     }
     btreePrint(tree);
     assert(btreeDel(tree, 7) == 1);
