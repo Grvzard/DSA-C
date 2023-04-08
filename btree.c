@@ -201,7 +201,7 @@ static void _btnodeInsertKeyAt(btree *t, btnode *n, size_t p, btreeKeyType key) 
     UNUSED(t);
     assert(p <= n->num_keys);
     if (p < n->num_keys) {
-        memcpy(
+        memmove(
             &n->keys[p+1],
             &n->keys[p],
             (n->num_keys - p) * sizeof(n->keys[0])
@@ -215,7 +215,7 @@ static void _btnodeInsertChildAt(btree *t, btnode *n, size_t p, btnode *child) {
     UNUSED(t);
     assert(p <= n->num_children);
     if (p < n->num_children) {
-        memcpy(
+        memmove(
             &n->children[p+1],
             &n->children[p],
             (n->num_children - p) * sizeof(n->children[0])
@@ -230,7 +230,7 @@ static btreeKeyType _btnodeRemoveKeyAt(btree *t, btnode *n, size_t p) {
     assert(p < n->num_keys);
     btreeKeyType key_removed = n->keys[p];
 
-    memcpy(
+    memmove(
         &n->keys[p],
         &n->keys[p+1],
         (n->num_keys - p - 1) * sizeof(n->keys[0])
@@ -245,7 +245,7 @@ static btnode* _btnodeRemoveChildAt(btree *t, btnode *n, size_t p) {
     assert(p < n->num_children);
     btnode *child_removed = n->children[p];
 
-    memcpy(
+    memmove(
         &n->children[p],
         &n->children[p+1],
         (n->num_children - p - 1) * sizeof(n->children[0])
@@ -413,7 +413,7 @@ static btreeKeyType _btnodeSplitToRight(btree *t, btnode *node_l, btnode *node_r
     size_t mid_p = nkeys / 2;
     btreeKeyType mid_key = node_l->keys[mid_p];
 
-    memcpy(
+    memmove(
         node_r->keys,
         &node_l->keys[mid_p + 1],
         (nkeys - mid_p - 1) * sizeof(node_l->keys[0])
@@ -422,7 +422,7 @@ static btreeKeyType _btnodeSplitToRight(btree *t, btnode *node_l, btnode *node_r
     node_r->num_keys = nkeys - mid_p - 1;
 
     if (!isLeaf(node_l)) {
-        memcpy(
+        memmove(
             node_r->children,
             &node_l->children[mid_p + 2],
             (node_l->num_children - mid_p - 2) * sizeof(node_l->children[0])
@@ -439,7 +439,7 @@ static btnode* _btnodeMergeToLeft(btree *t, btnode *node_l, btnode *node_r) {
     assert(new_nkeys <= MaxKeys(t));
     size_t new_nchildren = node_l->num_children + node_r->num_children;
 
-    memcpy(
+    memmove(
         &node_l->keys[node_l->num_keys],
         &node_r->keys[0],
         node_r->num_keys * sizeof(node_r->keys[0])
@@ -447,7 +447,7 @@ static btnode* _btnodeMergeToLeft(btree *t, btnode *node_l, btnode *node_r) {
     node_l->num_keys = new_nkeys;
 
     if (node_r->num_children) {
-        memcpy(
+        memmove(
             &node_l->children[node_l->num_children],
             &node_r->children[0],
             node_r->num_children * sizeof(node_r->children[0])
