@@ -35,7 +35,7 @@ void test2(void) {
 
 
 int main(void) {
-    // test1();
+    test1();
     test2();
 
     printf("ok");

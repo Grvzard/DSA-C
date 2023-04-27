@@ -6,6 +6,7 @@
 static bool _setLookup(set *s, SetKeyType key, size_t *pos);
 static void _slotsResize(set *s);
 static size_t _slotsSize(set *s);
+static size_t _calcMinSize(size_t used);
 
 
 set *setNew(void) {
@@ -61,8 +62,7 @@ bool setDel(set* s, SetKeyType key) {
 }
 
 bool setHas(set* s, SetKeyType key) {
-    size_t pos;
-    return _setLookup(s, key, &pos);
+    return _setLookup(s, key, NULL);
 }
 
 static bool _setLookup(set *s, SetKeyType key, size_t *pos) {
@@ -73,13 +73,13 @@ static bool _setLookup(set *s, SetKeyType key, size_t *pos) {
 
     while (s->slots[i].status >= (char)0) {
         if (s->slots[i].key == key) {
-            *pos = i;
+            if (pos) *pos = i;
             return true;
         }
         perturb >>= PERTURB_SHIFT;
         i = (i * 5 + 1 + perturb) & s->mask;
     }
-    *pos = i;
+    if (pos) *pos = i;
     return false;
 }
 
@@ -90,23 +90,27 @@ static size_t _calcMinSize(size_t used) {
 }
 
 static void _slotsResize(set *s) {
+    size_t old_mask = s->mask;
+    setentry *old_slots = s->slots;
+
     size_t size = _calcMinSize(s->used);
     s->mask = size - 1;
+    s->slots = malloc(size * sizeof(setentry));
+    memset(s->slots, 0xff, size * sizeof(setentry));
 
-    setentry *old_slots = s->slots;
-    setentry *new_slots = malloc(size * sizeof(setentry));
-    memset(new_slots, 0xff, size * sizeof(setentry));
+    if (old_slots == NULL) {
+        return;
+    }
 
-    for (int i = 0, j = 0; i < s->fill; i++) {
-        if (old_slots[i].status >= 0) {
-            new_slots[j] = old_slots[i];
-            j++;
+    for (setentry *entry = old_slots; entry <= old_slots + old_mask; entry++) {
+        if (entry->status >= 0) {
+            size_t pos;
+            _setLookup(s, entry->key, &pos);
+            s->slots[pos] = *entry;
         }
     }
-    if (old_slots != NULL) {
-        free(old_slots);
-    }
-    s->slots = new_slots;
+
+    free(old_slots);
     s->fill = s->used;
 }
 
