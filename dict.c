@@ -7,7 +7,6 @@
 #include "dict.h"
 
 typedef int32_t ix_t;
-typedef size_t hash_t;
 
 #define DKIX_EMPTY (-1)
 #define DKIX_DUMMY (-2)
@@ -21,45 +20,6 @@ typedef size_t hash_t;
 
 #define PERTURB_SHIFT 5
 
-typedef struct {
-    hash_t hash;
-    DictKeyType key;
-    DictValueType value;
-} DictKeyEntry;
-
-typedef struct {
-    uint8_t dk_log2_size;
-
-    // cpython use dk_log2_index_bytes
-    // but dk_index_bytes seems more eaier to understand
-    // (1 << dk_log2_index_bytes) == (dk_size * dk_index_bytes)
-    // possible values: [ 1 | 2 | 4 | 8 ]
-    uint8_t dk_index_bytes;
-
-    /* Number of usable entries in dk_entries. */
-    size_t dk_usable;
-
-    size_t dk_nentries;  // used + dummies
-
-    // It's called flexible array member, new in C99
-    char dk_indices[];
-
-    /* "PyDictKeyEntry dk_entries[USABLE_FRACTION(DK_SIZE(dk))];" array follows:
-       see the DK_ENTRIES() macro */
-} DictKeys;
-
-struct _dict {
-    /* Number of items in the dictionary */
-    uint32_t used;
-
-    // number of bytes needed for the dictkeys object
-    size_t dk_size;
-
-    DictKeys* keys;
-
-};
-
-
 // >> internal functions
 static inline DictKeyEntry*
 DK_ENTRIES(DictKeys* dk) {
@@ -67,14 +27,10 @@ DK_ENTRIES(DictKeys* dk) {
     size_t index = dk->dk_index_bytes * DK_SIZE(dk);
     return (DictKeyEntry*)(&indices[index]);
 }
-static inline hash_t
-Key_Hash(DictKeyType key) {
-    return (hash_t)key;
-}
 static uint8_t
 calc_log2_keysize(size_t minsize);
 static void
-_Dict_Resize(Dict* mp);
+_dictResize(Dict* mp);
 static DictKeys*
 _DictKeys_New(uint8_t log2_size);
 static int
@@ -95,16 +51,25 @@ static void
 _DictKeys_BuildIndices(DictKeys* dk, DictKeyEntry* newentries, size_t nentries);
 static size_t
 _DictKeys_GetHashPosition(DictKeys* dk, hash_t hash, ix_t index);
+
+static inline hash_t
+_DictKeys_DefaultKeyHashFunc(DictKeyType key) {
+    return (hash_t)key;
+}
+static int
+_DictKeys_DefaultKeyCmpFunc(DictKeyType key1, DictKeyType key2) {
+    return key1 == key2;
+}
 // << internal functions
 
 
 extern Dict*
-Dict_New(void) {
-    return Dict_NewPresized(1);
+dictNew(void) {
+    return dictNewPresized(1);
 }
 
 extern Dict*
-Dict_NewPresized(size_t size) {
+dictNewPresized(size_t size) {
     Dict* mp = (Dict*)malloc(sizeof(Dict));
     mp->used = 0;
     mp->keys = _DictKeys_New(calc_log2_keysize(size));
@@ -112,16 +77,16 @@ Dict_NewPresized(size_t size) {
 }
 
 extern DictValueType
-Dict_Get(Dict* mp, DictKeyType key) {
+dictGet(Dict* mp, DictKeyType key) {
     DictValueType value;
     assert(_DictKeys_Get(mp->keys, key, &value) == 0);
     return value;
 }
 
 extern void
-Dict_Set(Dict* mp, DictKeyType key, DictValueType value) {
+dictSet(Dict* mp, DictKeyType key, DictValueType value) {
     if (mp->keys->dk_usable <= 0) {
-        _Dict_Resize(mp);
+        _dictResize(mp);
     }
     int8_t ret = _DictKeys_Set(mp->keys, key, value);
     assert(ret == 0 || ret == 1);
@@ -129,19 +94,19 @@ Dict_Set(Dict* mp, DictKeyType key, DictValueType value) {
 }
 
 extern int
-Dict_Has(Dict* mp, DictKeyType key) {
+dictHas(Dict* mp, DictKeyType key) {
     DictKeys* dk = mp->keys;
-    ix_t ix = _DictKeys_Lookup(dk, key, Key_Hash(key));
+    ix_t ix = _DictKeys_Lookup(dk, key, dk->keyHashFunc(key));
     return (ix >= 0);
 }
 
 extern int
-Dict_Del(Dict* mp, DictKeyType key) {
+dictDel(Dict* mp, DictKeyType key) {
     DictKeys* dk = mp->keys;
-    ix_t ix = _DictKeys_Lookup(dk, key, Key_Hash(key));
+    ix_t ix = _DictKeys_Lookup(dk, key, dk->keyHashFunc(key));
     if (ix >= 0) {
         // Delete Key
-        size_t hashpos = _DictKeys_GetHashPosition(dk, Key_Hash(key), ix);
+        size_t hashpos = _DictKeys_GetHashPosition(dk, dk->keyHashFunc(key), ix);
         _DictKeys_SetIndex(dk, hashpos, DKIX_DUMMY);
         mp->used--;
     } else {
@@ -151,12 +116,12 @@ Dict_Del(Dict* mp, DictKeyType key) {
 }
 
 extern size_t
-Dict_Len(Dict* mp) {
+dictLen(Dict* mp) {
     return mp->used;
 }
 
 extern void
-Dict_Free(Dict* d) {
+dictFree(Dict* d) {
     _DictKeys_Free(d->keys);
     free(d);
 }
@@ -171,7 +136,7 @@ calc_log2_keysize(size_t minsize) {
 }
 
 static void
-_Dict_Resize(Dict* mp) {
+_dictResize(Dict* mp) {
     DictKeys* oldkeys = mp->keys;
     size_t nentries = mp->used;
 
@@ -220,7 +185,7 @@ _DictKeys_BuildIndices(DictKeys* dk, DictKeyEntry* ep, size_t nentries) {
 static int
 _DictKeys_Get(DictKeys* dk, DictKeyType key, DictValueType* value) {
     int err = 0;
-    ix_t ix = _DictKeys_Lookup(dk, key, Key_Hash(key));
+    ix_t ix = _DictKeys_Lookup(dk, key, dk->keyHashFunc(key));
     if (ix >= 0) {
         *value = DK_ENTRIES(dk)[ix].value;
     } else {
@@ -231,7 +196,7 @@ _DictKeys_Get(DictKeys* dk, DictKeyType key, DictValueType* value) {
 
 static int
 _DictKeys_Set(DictKeys* dk, DictKeyType key, DictValueType value) {
-    hash_t hash = Key_Hash(key);
+    hash_t hash = dk->keyHashFunc(key);
     int ret = 0;
     assert(dk->dk_usable > 0);
     ix_t ix = _DictKeys_Lookup(dk, key, hash);
@@ -279,9 +244,8 @@ _DictKeys_New(uint8_t log2_size) {
     dk->dk_index_bytes = index_bytes;
     dk->dk_usable = usable;
     dk->dk_nentries = 0;
-    // for (int i = 0; i < size; i++) {
-    //     dk->dk_indices[i] = -1;
-    // }
+    dk->keyCmpFunc = _DictKeys_DefaultKeyCmpFunc;
+    dk->keyHashFunc = _DictKeys_DefaultKeyHashFunc;
     memset(&dk->dk_indices[0], 0xff, dk_size * index_bytes);
     memset(DK_ENTRIES(dk), 0, usable * entry_bytes);
     return dk;
@@ -300,7 +264,7 @@ _DictKeys_Lookup(DictKeys* dk, DictKeyType key, hash_t hash) {
         ix_t ix = _DictKeys_GetIndex(dk, i);
         if (ix >= 0) {
             DictKeyEntry* ep = &ep0[ix];
-            if (ep->key == key) {
+            if (dk->keyCmpFunc(ep->key, key) == 1) {
                 return ix;
             }
         } else {
@@ -386,44 +350,44 @@ _DictKeys_SetIndex(DictKeys* dk, size_t i, ix_t ix) {
 #ifdef DICT_TEST
 extern void
 dictTest1(void) {
-    Dict *d = Dict_New();
+    Dict *d = dictNew();
 
-    if (!Dict_Has(d, 22)) {
-        Dict_Set(d, 22, 0);
+    if (!dictHas(d, 22)) {
+        dictSet(d, 22, 0);
     }
-    if (!Dict_Has(d, 22)) {
-        Dict_Set(d, 22, -1);
+    if (!dictHas(d, 22)) {
+        dictSet(d, 22, -1);
     }
-    int val = (int)Dict_Get(d, 22);
+    int val = (int)dictGet(d, 22);
     printf("%d\n", val);
     assert(val == 0);
 
-    Dict_Free(d);
+    dictFree(d);
     d = NULL;
 }
 
 extern void
 dictTest2(void) {
-    Dict *d = Dict_New();
+    Dict *d = dictNew();
 
     for (int i = 0; i < 70; i++) {
-        if (!Dict_Has(d, i)) {
-            Dict_Set(d, i, i);
+        if (!dictHas(d, i)) {
+            dictSet(d, i, i);
         }
     }
     for (int i = 0; i < 30; i++) {
-        if (Dict_Has(d, i)) {
-            Dict_Del(d, i);
+        if (dictHas(d, i)) {
+            dictDel(d, i);
         }
     }
 
-    // printf("val1: %d\n", Dict_Get(d, 12));
-    printf("val2: %d\n", Dict_Get(d, 69));
-    printf("len: %d\n", Dict_Len(d));
-    assert(Dict_Get(d, 69) == 69);
-    assert(Dict_Len(d) == 40);
+    // printf("val1: %d\n", dictGet(d, 12));
+    printf("val2: %d\n", dictGet(d, 69));
+    printf("len: %d\n", dictLen(d));
+    assert(dictGet(d, 69) == 69);
+    assert(dictLen(d) == 40);
 
-    Dict_Free(d);
+    dictFree(d);
     d = NULL;
 }
 
@@ -434,9 +398,20 @@ dictTest3(void) {
 
 extern void
 dictTest4(void) {
-    Dict *d = Dict_NewPresized(2u << 7);
+    Dict *d = dictNewPresized(2u << 7);
     assert(d->keys->dk_index_bytes == 2);
     assert(d->keys->dk_usable == 170);
+    printf("%d\n", d->keys->dk_index_bytes);
+    printf("%d\n", d->keys->dk_usable);
+}
+
+extern void
+dictTest5(void) {
+    Dict *d = dictNewPresized(20000000);
+    printf("%d\n", d->keys->dk_usable);
+    for (size_t i = 0; i < 10000000; i++) {
+        dictSet(d, i, 1111);
+    }
     printf("%d\n", d->keys->dk_index_bytes);
     printf("%d\n", d->keys->dk_usable);
 }
