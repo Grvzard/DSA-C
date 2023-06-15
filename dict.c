@@ -79,7 +79,8 @@ dictNewPresized(size_t size) {
 extern DictValueType
 dictGet(Dict* mp, DictKeyType key) {
     DictValueType value;
-    assert(_DictKeys_Get(mp->keys, key, &value) == 0);
+    int ret = _DictKeys_Get(mp->keys, key, &value);
+    assert(ret == 0);
     return value;
 }
 
