@@ -127,6 +127,22 @@ dictFree(Dict* d) {
     free(d);
 }
 
+extern bool
+dictIterNext(DictIter *iter, DictKeyType *key_, DictValueType *val_) {
+    DictKeys* dk = iter->mp->keys;
+    DictKeyEntry* entries = DK_ENTRIES(dk);
+    size_t i = iter->pos;
+    for (; i < dk->dk_nentries; i++, iter->pos++) {
+        if (entries[i].hash != 0) {
+            *key_ = entries[i].key;
+            *val_ = entries[i].value;
+            iter->pos++;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static uint8_t
 calc_log2_keysize(size_t minsize) {
     uint8_t new_log2_size = DICT_LOG_MINSIZE;
